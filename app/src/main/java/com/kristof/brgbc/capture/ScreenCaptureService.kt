@@ -32,7 +32,7 @@ class ScreenCaptureService : Service() {
     companion object {
         private const val TAG = "ScreenCaptureService"
         private const val NOTIFICATION_ID = 1001
-        private const val CHANNEL_ID = "screen_sync_channel"
+        private const val CHANNEL_ID = "screen_sync_quiet"
         const val ACTION_START = "ACTION_START"
         const val ACTION_STOP = "ACTION_STOP"
         const val EXTRA_RESULT_CODE = "EXTRA_RESULT_CODE"
@@ -45,6 +45,7 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private val audioAnalyzer = AudioAnalyzer() // Audio capture
     
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var captureJob: Job? = null
@@ -110,7 +111,14 @@ class ScreenCaptureService : Service() {
                 }
                 
                 Log.e(TAG, "Starting foreground service...")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                     startForeground(
+                        NOTIFICATION_ID, 
+                        createNotification(),
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    )
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(
                         NOTIFICATION_ID, 
                         createNotification(),
@@ -196,6 +204,12 @@ class ScreenCaptureService : Service() {
             
             // Start capture loop
             startCaptureLoop()
+            
+            // Start Audio
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                 audioAnalyzer.start(mediaProjection!!)
+            }
+
             Log.d(TAG, "Capture loop started at $FPS FPS")
         } catch (e: Exception) {
             Log.e(TAG, "CRASH in startScreenCapture: ${e.message}")
@@ -347,13 +361,66 @@ class ScreenCaptureService : Service() {
                 // Smooth
                 val (smoothR, smoothG, smoothB) = colorSmoother.smooth(r, g, b)
                 
+                // --- Audio Sync Application ---
+                val amplitude = audioAnalyzer.getAmplitude()
+                
+                var finalR = smoothR.toFloat()
+                var finalG = smoothG.toFloat()
+                var finalB = smoothB.toFloat()
+
+                if (LedControllerHolder.isAudioSyncEnabled) {
+                    // BEAT-REACTIVE Mode:
+                    // Screen color provides the HUE, audio provides the BRIGHTNESS
+                    // On beats: bright flash. Between beats: dim/off.
+                    
+                    val maxVal = maxOf(finalR, finalG, finalB).coerceAtLeast(1f)
+                    
+                    // Normalized colors (Hue/Saturation only)
+                    val normR = finalR / maxVal
+                    val normG = finalG / maxVal
+                    val normB = finalB / maxVal
+                    
+                    // Audio Brightness:
+                    // amplitude is 0.0 (silence) to 1.5 (strong beat)
+                    // We want DRAMATIC range: nearly off to full brightness
+                    // No baseline - let silence be dark for contrast
+                    val audioBrightness = (amplitude * 255f).coerceIn(0f, 255f)
+                    
+                    finalR = normR * audioBrightness
+                    finalG = normG * audioBrightness
+                    finalB = normB * audioBrightness
+                    
+                    // Debug log for audio sync
+                    if (now - lastLogTime > 1000) {
+                        Log.d(TAG, "AudioSync: Amp=${String.format("%.2f", amplitude)}, Brightness=${audioBrightness.toInt()}, RGB=(${finalR.toInt()}, ${finalG.toInt()}, ${finalB.toInt()})")
+                    }
+                } else {
+                    finalR = finalR.coerceIn(0f, 255f)
+                    finalG = finalG.coerceIn(0f, 255f)
+                    finalB = finalB.coerceIn(0f, 255f)
+                }
+                // ------------------------------
+
                 // Send
                 val controller = LedControllerHolder.controller
+                val isAudioSync = LedControllerHolder.isAudioSyncEnabled
+                
                 if (controller != null && controller.isConnected) {
-                    controller.setColor(smoothR, smoothG, smoothB)
+                    val sendR = finalR.toInt().coerceIn(0, 255)
+                    val sendG = finalG.toInt().coerceIn(0, 255)
+                    val sendB = finalB.toInt().coerceIn(0, 255)
+                    
+                    controller.setColor(sendR, sendG, sendB)
+                    
+                    // Always log (every 500ms) to debug
+                    if (now - lastLogTime > 500) {
+                        Log.d(TAG, "LED SEND: RGB=($sendR, $sendG, $sendB) | AudioSync=$isAudioSync | Amp=${String.format("%.2f", amplitude)}")
+                        lastLogTime = now
+                    }
                 } else {
-                    if (now - lastLogTime > 1000) { // piggyback on the 1s timer
-                         Log.w(TAG, "Cannot sync: Controller not connected or null")
+                    if (now - lastLogTime > 1000) {
+                        Log.w(TAG, "Cannot sync: controller=${controller != null}, connected=${controller?.isConnected}, audioSync=$isAudioSync")
+                        lastLogTime = now
                     }
                 }
                 
@@ -397,6 +464,7 @@ class ScreenCaptureService : Service() {
         captureJob?.cancel()
         virtualDisplay?.release()
         imageReader?.close()
+        audioAnalyzer.stop()
         mediaProjection?.stop()
         
         captureJob = null
@@ -424,10 +492,11 @@ class ScreenCaptureService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Screen Sync",
-                NotificationManager.IMPORTANCE_LOW
+                "Screen Sync Service",
+                NotificationManager.IMPORTANCE_MIN // Try MIN to hide from status bar
             ).apply {
-                description = "LED screen synchronization service"
+                description = "Background service for LED Sync"
+                setShowBadge(false)
             }
             
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -445,11 +514,14 @@ class ScreenCaptureService : Service() {
         )
         
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Screen Sync Active")
-            .setContentText("Syncing screen colors to LED strip")
+            .setContentTitle("BRGBC Active")
+            .setContentText("Syncing lights...")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN) // Min priority
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET) // Hide from lockscreen
+            .setShowWhen(false)
             .build()
     }
 }
@@ -459,4 +531,5 @@ class ScreenCaptureService : Service() {
  */
 object LedControllerHolder {
     var controller: BleLedController? = null
+    var isAudioSyncEnabled: Boolean = false
 }

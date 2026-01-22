@@ -30,11 +30,17 @@ class LedViewModel : ViewModel() {
         val selectedEffect: LedEffect = LedEffect.RAINBOW,
         val effectSpeed: Float = 0.1f,
         val isScreenSyncActive: Boolean = false,
-        val autoStartEnabled: Boolean = false
+        val autoStartEnabled: Boolean = false,
+        val audioSyncEnabled: Boolean = true // Default to on for fun!
     )
     
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+    
+    init {
+        // Sync default audio sync state to the holder
+        com.kristof.brgbc.capture.LedControllerHolder.isAudioSyncEnabled = _uiState.value.audioSyncEnabled
+    }
     
     var mediaProjectionResultCode: Int = Activity.RESULT_CANCELED
     var mediaProjectionResultData: Intent? = null
@@ -72,5 +78,10 @@ class LedViewModel : ViewModel() {
     
     fun setAutoStartEnabled(enabled: Boolean) {
         _uiState.value = _uiState.value.copy(autoStartEnabled = enabled)
+    }
+
+    fun setAudioSyncEnabled(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(audioSyncEnabled = enabled)
+        com.kristof.brgbc.capture.LedControllerHolder.isAudioSyncEnabled = enabled
     }
 }

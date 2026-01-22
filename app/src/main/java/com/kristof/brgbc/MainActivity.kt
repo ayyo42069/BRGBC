@@ -16,7 +16,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -117,9 +116,7 @@ class MainActivity : ComponentActivity() {
                     onStartEffect = ::startEffect,
                     onStopEffect = ::stopEffect,
                     scannedDevices = scannedDevices,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF121212))
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }
@@ -149,6 +146,9 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
         }
+
+        // Audio Permission (Required for Sync)
+        permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
         
         // Filter out already granted permissions
         val neededPermissions = permissionsToRequest.filter {

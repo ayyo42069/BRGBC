@@ -15,6 +15,7 @@ So, I built my own.
   - **Intelligent Brightness:** Uses gamma correction (`pow(0.7)`) to make details visible in dark scenes without blinding you during bright flashes.
   - **Weighted Sampling:** The algorithm prioritizes vibrant pixels over boring grey ones to capture the true "mood" of the scene.
 - **"Fast Attack, Slow Decay" Smoothing:** The lights react instantly to explosions and camera flashes (0.7 attack) but fade out elegantly during scene transitions (0.15 decay). No more "laggy" feeling lights.
+- **🎵 Audio Reactivity:** Syncs brightness to the beat of the music. Music videos come alive as the lights pulse with the bass and dynamic range of the audio.
 
 ### 🛡️ Built for Real World Use
 - **DRM & Tunneled Playback Protection:** The app is smart enough to know when you're watching protected content (like Netflix) or using Tunneled Playback (like SmartTube). Instead of crashing or getting stuck on a "grey screen," it detects the issue and handles it gracefully (lights dim to black).
@@ -67,6 +68,7 @@ Reverse-engineered commands for the cheap AliExpress controllers:
 - **Black/Grey Lights on Video:** If using SmartTube, enable Player->Developer->"Ambilight/Aspect Ratio/Video scale/Screenshots fix" in settings. For Netflix/Disney+, this is a system limitation (DRM) preventing screen capture. If u are an expert u can root your tv, u can use magisk to patch the system.
 - **"Device Not Found":** Make sure the cheap Chinese app isn't still connected to the lights in the background on your phone!
 - **Wrong Colors:** Some strips are GRB instead of RGB. You can tweak the `sendPacket` order in `BleLedController.kt` if needed.
+- **Green Dot / Cast Icon in corner:** This is the Android System Privacy Indicator. It is forced by the OS for security (to warn you screen capture is active). It cannot be hidden by any app without Root. We have minimized the app's own notification to be invisible, but the system icon is mandatory.
 
 ---
 *Built for fun because I refuse to use bad software. | Made by kristof.best*

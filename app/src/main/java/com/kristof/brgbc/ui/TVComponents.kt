@@ -1,9 +1,11 @@
 package com.kristof.brgbc.ui
 
 import android.bluetooth.BluetoothDevice
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,21 +15,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.kristof.brgbc.ble.LedEffect
+import com.kristof.brgbc.ui.theme.*
 import com.kristof.brgbc.viewmodel.LedViewModel
 
 /**
- * TV-optimized components with larger touch targets and better focus handling
+ * Minimalist TV components - clean, modern design
+ * Inspired by kristof.best website aesthetics
  */
 
+private val ButtonRadius = 8.dp
+private val CardRadius = 4.dp
+
+// ============================================================
+// CONNECTION STATUS
+// ============================================================
 @Composable
 fun TVConnectionStatusCard(
     isConnected: Boolean,
@@ -35,72 +47,75 @@ fun TVConnectionStatusCard(
     onScanClick: () -> Unit,
     onDisconnectClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isConnected) Color(0xFF1B5E20) else Color(0xFF424242)
-        )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Status dot
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(if (isConnected) StatusGreen else StatusRed)
+            )
+            
             Column {
                 Text(
                     text = if (isConnected) "Connected" else "Disconnected",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary
                 )
                 if (deviceName != null) {
                     Text(
                         text = deviceName,
-                        fontSize = 20.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        fontSize = 14.sp,
+                        color = TextMuted
                     )
                 }
             }
-            
-            TVButton(
-                onClick = if (isConnected) onDisconnectClick else onScanClick,
-                text = if (isConnected) "Disconnect" else "Scan & Connect",
-                backgroundColor = if (isConnected) Color(0xFFD32F2F) else Color(0xFF2196F3)
-            )
         }
+        
+        MinimalButton(
+            onClick = if (isConnected) onDisconnectClick else onScanClick,
+            text = if (isConnected) "Disconnect" else "Scan & Connect",
+            outlined = !isConnected
+        )
     }
 }
 
+// ============================================================
+// MODE SELECTOR
+// ============================================================
 @Composable
 fun TVModeSelector(
     selectedMode: LedViewModel.ControlMode,
     onModeSelected: (LedViewModel.ControlMode) -> Unit
 ) {
-    Column {
-        Text(
-            text = "Mode",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-        
+    Column(
+        modifier = Modifier.padding(vertical = 8.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             LedViewModel.ControlMode.entries.forEach { mode ->
                 val isSelected = mode == selectedMode
-                TVButton(
+                ModeTab(
                     onClick = { onModeSelected(mode) },
                     text = when (mode) {
                         LedViewModel.ControlMode.SCREEN_SYNC -> "Screen Sync"
-                        LedViewModel.ControlMode.STATIC_COLOR -> "Static Color"
+                        LedViewModel.ControlMode.STATIC_COLOR -> "Color"
                         LedViewModel.ControlMode.EFFECTS -> "Effects"
                     },
-                    backgroundColor = if (isSelected) Color(0xFF2196F3) else Color(0xFF616161),
+                    isSelected = isSelected,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -108,139 +123,212 @@ fun TVModeSelector(
     }
 }
 
+// ============================================================
+// BRIGHTNESS CONTROL
+// ============================================================
 @Composable
 fun TVBrightnessControl(
     brightness: Int,
     onBrightnessChange: (Int) -> Unit
 ) {
-    Column {
-        Text(
-            text = "Brightness: $brightness%",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+    Column(
+        modifier = Modifier.padding(vertical = 16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Brightness",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextPrimary
+            )
+            Text(
+                text = "$brightness%",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Progress bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(BorderColor)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(brightness / 100f)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(TextPrimary)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
         
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TVButton(
-                onClick = { onBrightnessChange((brightness - 10).coerceAtLeast(0)) },
-                text = "- 10%",
+            MinimalButton(
+                onClick = { onBrightnessChange(0) },
+                text = "Off",
+                small = true,
                 modifier = Modifier.weight(1f)
             )
-            
-            TVButton(
+            MinimalButton(
                 onClick = { onBrightnessChange((brightness - 25).coerceAtLeast(0)) },
-                text = "- 25%",
+                text = "-25",
+                small = true,
                 modifier = Modifier.weight(1f)
             )
-            
-            TVButton(
+            MinimalButton(
                 onClick = { onBrightnessChange((brightness + 25).coerceAtMost(100)) },
-                text = "+ 25%",
+                text = "+25",
+                small = true,
                 modifier = Modifier.weight(1f)
             )
-            
-            TVButton(
-                onClick = { onBrightnessChange((brightness + 10).coerceAtMost(100)) },
-                text = "+ 10%",
+            MinimalButton(
+                onClick = { onBrightnessChange(100) },
+                text = "Max",
+                small = true,
                 modifier = Modifier.weight(1f)
             )
         }
     }
 }
 
+// ============================================================
+// SCREEN SYNC CONTROL
+// ============================================================
 @Composable
 fun TVScreenSyncControl(
     isActive: Boolean,
+    isAudioSyncEnabled: Boolean,
     onStartClick: () -> Unit,
-    onStopClick: () -> Unit
+    onStopClick: () -> Unit,
+    onAudioSyncToggle: (Boolean) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242))
-    ) {
+    SectionCard {
         Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Text(
-                text = "Screen Sync",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Screen Sync",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = if (isActive) "Syncing at 30 FPS" else "Match LED to screen",
+                        fontSize = 14.sp,
+                        color = TextMuted
+                    )
+                }
+                
+                MinimalButton(
+                    onClick = if (isActive) onStopClick else onStartClick,
+                    text = if (isActive) "Stop" else "Start",
+                    filled = !isActive
+                )
+            }
             
-            Text(
-                text = if (isActive) "LED is syncing with screen colors at 10 FPS" 
-                       else "Capture screen colors and sync to LED strip",
-                fontSize = 20.sp,
-                color = Color.White.copy(alpha = 0.7f)
-            )
+            Divider(color = BorderColor, thickness = 1.dp)
             
-            TVButton(
-                onClick = if (isActive) onStopClick else onStartClick,
-                text = if (isActive) "Stop Screen Sync" else "Start Screen Sync",
-                backgroundColor = if (isActive) Color(0xFFD32F2F) else Color(0xFF4CAF50),
-                modifier = Modifier.fillMaxWidth()
-            )
+            // Audio sync toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Audio Reactivity",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Pulse brightness with audio",
+                        fontSize = 13.sp,
+                        color = TextMuted
+                    )
+                }
+                
+                MinimalSwitch(
+                    checked = isAudioSyncEnabled,
+                    onCheckedChange = onAudioSyncToggle
+                )
+            }
         }
     }
 }
 
+// ============================================================
+// STATIC COLOR PICKER
+// ============================================================
 @Composable
 fun TVStaticColorPicker(
     selectedColor: Color,
     onColorSelected: (Color) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242))
-    ) {
+    SectionCard {
         Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            Text(
-                text = "Static Color",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            // Color Preview
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
-                    .background(selectedColor)
-                    .border(4.dp, Color.White, CircleShape)
-                    .align(Alignment.CenterHorizontally)
-            )
-            
-            // Preset Colors
-            Text(
-                text = "Select Color",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Current color preview
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(CardRadius))
+                        .background(selectedColor)
+                        .border(1.dp, BorderColor, RoundedCornerShape(CardRadius))
+                )
+                
+                Column {
+                    Text(
+                        text = "Static Color",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Select a color for the LED strip",
+                        fontSize = 14.sp,
+                        color = TextMuted
+                    )
+                }
+            }
             
             val presetColors = listOf(
-                Color.White to "White",
-                Color.Red to "Red",
-                Color.Green to "Green",
-                Color.Blue to "Blue",
-                Color.Yellow to "Yellow",
-                Color.Cyan to "Cyan",
-                Color.Magenta to "Magenta",
-                Color(0xFFFFA500) to "Orange",
-                Color(0xFF800080) to "Purple",
-                Color(0xFFFFC0CB) to "Pink"
+                Color.White,
+                Color.Red,
+                Color.Green,
+                Color.Blue,
+                Color.Yellow,
+                Color.Cyan,
+                Color.Magenta,
+                Color(0xFFFFA500),
+                Color(0xFF800080),
+                Color(0xFFFFC0CB)
             )
             
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -249,8 +337,8 @@ fun TVStaticColorPicker(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        row.forEach { (color, name) ->
-                            TVColorButton(
+                        row.forEach { color ->
+                            ColorSwatch(
                                 color = color,
                                 isSelected = color == selectedColor,
                                 onClick = { onColorSelected(color) },
@@ -264,6 +352,9 @@ fun TVStaticColorPicker(
     }
 }
 
+// ============================================================
+// EFFECTS CONTROL
+// ============================================================
 @Composable
 fun TVEffectsControl(
     selectedEffect: LedEffect,
@@ -271,38 +362,32 @@ fun TVEffectsControl(
     onEffectSelected: (LedEffect) -> Unit,
     onSpeedChanged: (Float) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF424242))
-    ) {
+    SectionCard {
         Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             Text(
                 text = "Effects",
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary
             )
             
-            // Effect List in a grid for better TV navigation
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Effect grid
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 LedEffect.entries.chunked(3).forEach { rowEffects ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         rowEffects.forEach { effect ->
-                            val isSelected = effect == selectedEffect
-                            TVButton(
+                            EffectTile(
                                 onClick = { onEffectSelected(effect) },
                                 text = effect.displayName,
-                                backgroundColor = if (isSelected) Color(0xFF2196F3) else Color(0xFF616161),
+                                isSelected = effect == selectedEffect,
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        // Fill remaining space if less than 3 items
                         repeat(3 - rowEffects.size) {
                             Spacer(modifier = Modifier.weight(1f))
                         }
@@ -310,38 +395,47 @@ fun TVEffectsControl(
                 }
             }
             
-            // Speed Control
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Effect Speed",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
+            Divider(color = BorderColor, thickness = 1.dp)
+            
+            // Speed control
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Speed",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary
+                )
+                Text(
+                    text = String.format("%.2fs", effectSpeed),
+                    fontSize = 16.sp,
+                    color = TextSecondary
+                )
+            }
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TVButton(
+                MinimalButton(
                     onClick = { onSpeedChanged((effectSpeed - 0.05f).coerceAtLeast(0.01f)) },
                     text = "Slower",
+                    small = true,
                     modifier = Modifier.weight(1f)
                 )
-                
-                Text(
-                    text = String.format("%.2fs", effectSpeed),
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(vertical = 16.dp)
+                MinimalButton(
+                    onClick = { onSpeedChanged(0.1f) },
+                    text = "Reset",
+                    small = true,
+                    modifier = Modifier.weight(1f)
                 )
-                
-                TVButton(
+                MinimalButton(
                     onClick = { onSpeedChanged((effectSpeed + 0.05f).coerceAtMost(0.5f)) },
                     text = "Faster",
+                    small = true,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -349,65 +443,9 @@ fun TVEffectsControl(
     }
 }
 
-// Base TV Button Component with focus handling
-@Composable
-fun TVButton(
-    onClick: () -> Unit,
-    text: String,
-    modifier: Modifier = Modifier,
-    backgroundColor: Color = Color(0xFF2196F3)
-) {
-    var isFocused by remember { mutableStateOf(false) }
-    
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .height(64.dp)
-            .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
-            .then(
-                if (isFocused) Modifier.border(4.dp, Color.White, RoundedCornerShape(8.dp))
-                else Modifier
-            ),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = backgroundColor
-        ),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@Composable
-fun TVColorButton(
-    color: Color,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var isFocused by remember { mutableStateOf(false) }
-    
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .height(80.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(color)
-            .border(
-                width = if (isSelected) 5.dp else if (isFocused) 4.dp else 2.dp,
-                color = if (isSelected) Color(0xFFFFC107) else if (isFocused) Color.White else Color.White.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clickable { onClick() }
-            .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
-    )
-}
-
+// ============================================================
+// DEVICE SCANNER DIALOG
+// ============================================================
 @Composable
 fun TVDeviceScannerDialog(
     devices: List<BluetoothDevice>,
@@ -416,58 +454,376 @@ fun TVDeviceScannerDialog(
     onScanClick: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        Box(
             modifier = Modifier
-                .fillMaxWidth(0.8f)
-                .padding(32.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF212121))
+                .fillMaxWidth(0.7f)
+                .clip(RoundedCornerShape(CardRadius))
+                .background(OffBlack)
+                .border(1.dp, BorderColor, RoundedCornerShape(CardRadius))
+                .padding(32.dp)
         ) {
             Column(
-                modifier = Modifier.padding(32.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
                 Text(
                     text = "Bluetooth Devices",
-                    fontSize = 32.sp,
+                    fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimary
                 )
                 
-                TVButton(
+                MinimalButton(
                     onClick = onScanClick,
                     text = "Scan for Devices",
+                    filled = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 
                 if (devices.isEmpty()) {
                     Text(
-                        text = "No devices found. Tap 'Scan for Devices' to search.",
-                        fontSize = 20.sp,
-                        color = Color.White.copy(alpha = 0.7f)
+                        text = "No devices found. Tap scan to search.",
+                        fontSize = 14.sp,
+                        color = TextMuted
                     )
                 } else {
                     Text(
-                        text = "Found ${devices.size} device(s):",
-                        fontSize = 20.sp,
-                        color = Color.White
+                        text = "Found ${devices.size} device(s)",
+                        fontSize = 14.sp,
+                        color = TextSecondary
                     )
                     
-                    devices.forEach { device ->
-                        TVButton(
-                            onClick = { onDeviceSelected(device) },
-                            text = device.name ?: "Unknown Device",
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        devices.forEach { device ->
+                            DeviceRow(
+                                deviceName = device.name ?: "Unknown Device",
+                                onClick = { onDeviceSelected(device) }
+                            )
+                        }
                     }
                 }
                 
-                TVButton(
+                MinimalButton(
                     onClick = onDismiss,
                     text = "Close",
-                    backgroundColor = Color(0xFF616161),
+                    outlined = true,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         }
     }
+}
+
+// ============================================================
+// BASE COMPONENTS
+// ============================================================
+
+@Composable
+fun SectionCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Row(modifier = modifier.fillMaxWidth()) {
+        // Left accent bar
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(IntrinsicSize.Max)
+                .background(AccentBlue)
+        )
+        
+        Spacer(modifier = Modifier.width(20.dp))
+        
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun MinimalButton(
+    onClick: () -> Unit,
+    text: String,
+    modifier: Modifier = Modifier,
+    filled: Boolean = false,
+    outlined: Boolean = false,
+    small: Boolean = false
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.02f else 1f,
+        animationSpec = tween(100),
+        label = "scale"
+    )
+    
+    val backgroundColor = when {
+        filled -> TextPrimary
+        isFocused -> CardBg
+        else -> Color.Transparent
+    }
+    
+    val textColor = when {
+        filled -> PureBlack
+        else -> TextPrimary
+    }
+    
+    val borderColor = when {
+        isFocused -> TextPrimary
+        outlined -> BorderColor
+        else -> Color.Transparent
+    }
+    
+    val height = if (small) 48.dp else 56.dp
+    val fontSize = if (small) 14.sp else 16.sp
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(height)
+            .scale(scale)
+            .border(1.dp, borderColor, RoundedCornerShape(ButtonRadius))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
+        shape = RoundedCornerShape(ButtonRadius),
+        contentPadding = PaddingValues(horizontal = 20.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = text,
+                fontSize = fontSize,
+                fontWeight = FontWeight.Medium,
+                color = textColor
+            )
+            if (filled || outlined) {
+                Text(
+                    text = "→",
+                    fontSize = fontSize,
+                    color = textColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ModeTab(
+    onClick: () -> Unit,
+    text: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> TextPrimary
+            isFocused -> CardBg
+            else -> Color.Transparent
+        },
+        animationSpec = tween(100),
+        label = "bg"
+    )
+    
+    val textColor = if (isSelected) PureBlack else TextPrimary
+    val borderColor = if (isFocused && !isSelected) TextPrimary else BorderColor
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(52.dp)
+            .border(1.dp, borderColor, RoundedCornerShape(ButtonRadius))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
+        shape = RoundedCornerShape(ButtonRadius)
+    ) {
+        Text(
+            text = text,
+            fontSize = 15.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color = textColor
+        )
+    }
+}
+
+@Composable
+fun ColorSwatch(
+    color: Color,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.1f else 1f,
+        animationSpec = tween(100),
+        label = "scale"
+    )
+    
+    val borderWidth = when {
+        isSelected -> 3.dp
+        isFocused -> 2.dp
+        else -> 1.dp
+    }
+    
+    val borderColor = when {
+        isSelected -> TextPrimary
+        isFocused -> TextPrimary
+        else -> BorderColor
+    }
+    
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .scale(scale)
+            .clip(RoundedCornerShape(CardRadius))
+            .background(color)
+            .border(borderWidth, borderColor, RoundedCornerShape(CardRadius))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            }
+    )
+}
+
+@Composable
+fun EffectTile(
+    onClick: () -> Unit,
+    text: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isSelected -> AccentBlue
+            isFocused -> CardBg
+            else -> Color.Transparent
+        },
+        animationSpec = tween(100),
+        label = "bg"
+    )
+    
+    val borderColor = when {
+        isFocused && !isSelected -> TextPrimary
+        isSelected -> Color.Transparent
+        else -> BorderColor
+    }
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(52.dp)
+            .border(1.dp, borderColor, RoundedCornerShape(ButtonRadius))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
+        shape = RoundedCornerShape(ButtonRadius)
+    ) {
+        Text(
+            text = text,
+            fontSize = 14.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color = TextPrimary,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun DeviceRow(
+    deviceName: String,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val backgroundColor = if (isFocused) CardBg else Color.Transparent
+    val borderColor = if (isFocused) TextPrimary else BorderColor
+    
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(ButtonRadius))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(ButtonRadius))
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = deviceName,
+                fontSize = 16.sp,
+                color = TextPrimary
+            )
+            Text(
+                text = "→",
+                fontSize = 16.sp,
+                color = TextSecondary
+            )
+        }
+    }
+}
+
+@Composable
+fun MinimalSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = TextPrimary,
+            checkedTrackColor = AccentBlue,
+            uncheckedThumbColor = TextMuted,
+            uncheckedTrackColor = BorderColor
+        )
+    )
 }
