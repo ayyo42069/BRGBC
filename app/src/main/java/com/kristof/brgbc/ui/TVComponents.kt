@@ -20,6 +20,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -282,7 +284,7 @@ fun TVScreenSyncControl(
 }
 
 // ============================================================
-// STATIC COLOR PICKER - RGB Color Wheel
+// STATIC COLOR PICKER - TV Remote Friendly
 // ============================================================
 @Composable
 fun TVStaticColorPicker(
@@ -301,206 +303,212 @@ fun TVStaticColorPicker(
     
     var hue by remember { mutableFloatStateOf(initialHsv[0]) }
     var saturation by remember { mutableFloatStateOf(initialHsv[1]) }
-    var value by remember { mutableFloatStateOf(initialHsv[2]) }
+    var brightness by remember { mutableFloatStateOf(initialHsv[2]) }
     
     // Calculate current color from HSV
-    val currentColor = remember(hue, saturation, value) {
-        val androidColor = android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))
+    val currentColor = remember(hue, saturation, brightness) {
+        val androidColor = android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, brightness))
         Color(androidColor)
     }
     
     Column(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Instantly apply color when HSV values change
+        LaunchedEffect(hue, saturation, brightness) {
+            onColorSelected(currentColor)
+        }
+        
         // Header with current color preview
         SectionCard {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Current color preview
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(CardRadius))
-                            .background(currentColor)
-                            .border(2.dp, BorderColor, RoundedCornerShape(CardRadius))
-                    )
-                    
-                    Column {
-                        Text(
-                            text = "Custom Color",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "RGB(${(currentColor.red * 255).toInt()}, ${(currentColor.green * 255).toInt()}, ${(currentColor.blue * 255).toInt()})",
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = TextMuted
-                        )
-                    }
-                }
-                
-                MinimalButton(
-                    onClick = { onColorSelected(currentColor) },
-                    text = "Apply",
-                    small = false
+                // Current color preview (large)
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(currentColor)
+                        .border(3.dp, TextPrimary, RoundedCornerShape(16.dp))
                 )
+                
+                Column {
+                    Text(
+                        text = "Live Color",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "RGB(${(currentColor.red * 255).toInt()}, ${(currentColor.green * 255).toInt()}, ${(currentColor.blue * 255).toInt()})",
+                        fontSize = 14.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = TextMuted
+                    )
+                    Text(
+                        text = "Changes apply instantly",
+                        fontSize = 12.sp,
+                        color = AccentBlue
+                    )
+                }
             }
         }
         
-        // HSV Sliders
+        // Hue Control (Color selection)
         SectionCard {
             Column(
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Hue Slider (Color Wheel)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Hue",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "${hue.toInt()}°",
-                            fontSize = 14.sp,
-                            color = TextSecondary
-                        )
-                    }
-                    
-                    // Hue gradient bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = (0..360 step 30).map { h ->
-                                        Color(android.graphics.Color.HSVToColor(floatArrayOf(h.toFloat(), 1f, 1f)))
-                                    }
-                                )
-                            )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Color (Hue)",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
                     )
-                    
-                    Slider(
-                        value = hue,
-                        onValueChange = { hue = it },
-                        valueRange = 0f..360f,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = TextPrimary,
-                            activeTrackColor = AccentBlue,
-                            inactiveTrackColor = BorderColor
-                        )
+                    Text(
+                        text = "${hue.toInt()}°",
+                        fontSize = 14.sp,
+                        color = TextSecondary
                     )
                 }
                 
-                // Saturation Slider
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Saturation",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary
+                // Hue gradient bar (visual only)
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = (0..360 step 30).map { h ->
+                                    Color(android.graphics.Color.HSVToColor(floatArrayOf(h.toFloat(), 1f, 1f)))
+                                }
+                            )
                         )
-                        Text(
-                            text = "${(saturation * 100).toInt()}%",
-                            fontSize = 14.sp,
-                            color = TextSecondary
-                        )
-                    }
-                    
-                    // Saturation gradient bar
+                ) {
+                    // Position indicator
+                    val indicatorPosition = (hue / 360f) * maxWidth.value
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(24.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0f, value))),
-                                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, value)))
-                                    )
-                                )
-                            )
-                    )
-                    
-                    Slider(
-                        value = saturation,
-                        onValueChange = { saturation = it },
-                        valueRange = 0f..1f,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = TextPrimary,
-                            activeTrackColor = AccentBlue,
-                            inactiveTrackColor = BorderColor
-                        )
+                            .fillMaxHeight()
+                            .width(6.dp)
+                            .offset(x = indicatorPosition.dp - 3.dp)
+                            .background(Color.White)
+                            .border(1.dp, Color.Black, RoundedCornerShape(2.dp))
                     )
                 }
                 
-                // Value/Brightness Slider
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Brightness",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "${(value * 100).toInt()}%",
-                            fontSize = 14.sp,
-                            color = TextSecondary
-                        )
-                    }
-                    
-                    // Value gradient bar
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(24.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Black,
-                                        Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, 1f)))
-                                    )
+                // Hue buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ColorControlButton(
+                        onClick = { hue = ((hue - 30f + 360f) % 360f) },
+                        text = "◀ -30°",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { hue = ((hue - 10f + 360f) % 360f) },
+                        text = "◀ -10°",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { hue = ((hue + 10f) % 360f) },
+                        text = "+10° ▶",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { hue = ((hue + 30f) % 360f) },
+                        text = "+30° ▶",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+        
+        // Saturation Control
+        SectionCard {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Saturation",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "${(saturation * 100).toInt()}%",
+                        fontSize = 14.sp,
+                        color = TextSecondary
+                    )
+                }
+                
+                // Saturation gradient bar
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.White,
+                                    Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, 1f, brightness)))
                                 )
                             )
-                    )
-                    
-                    Slider(
-                        value = value,
-                        onValueChange = { value = it },
-                        valueRange = 0f..1f,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = SliderDefaults.colors(
-                            thumbColor = TextPrimary,
-                            activeTrackColor = AccentBlue,
-                            inactiveTrackColor = BorderColor
                         )
+                ) {
+                    // Position indicator
+                    val indicatorPosition = saturation * maxWidth.value
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(6.dp)
+                            .offset(x = indicatorPosition.dp - 3.dp)
+                            .background(Color.Black)
+                            .border(1.dp, Color.White, RoundedCornerShape(2.dp))
+                    )
+                }
+                
+                // Saturation buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ColorControlButton(
+                        onClick = { saturation = (saturation - 0.25f).coerceAtLeast(0f) },
+                        text = "◀ -25%",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { saturation = (saturation - 0.1f).coerceAtLeast(0f) },
+                        text = "◀ -10%",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { saturation = (saturation + 0.1f).coerceAtMost(1f) },
+                        text = "+10% ▶",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ColorControlButton(
+                        onClick = { saturation = (saturation + 0.25f).coerceAtMost(1f) },
+                        text = "+25% ▶",
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -519,28 +527,27 @@ fun TVStaticColorPicker(
                 )
                 
                 val presetColors = listOf(
-                    Color.White to "White",
-                    Color.Red to "Red",
-                    Color(0xFFFFA500) to "Orange",
-                    Color.Yellow to "Yellow",
-                    Color.Green to "Green",
-                    Color.Cyan to "Cyan",
-                    Color.Blue to "Blue",
-                    Color.Magenta to "Magenta",
-                    Color(0xFF800080) to "Purple",
-                    Color(0xFFFFC0CB) to "Pink"
+                    Color.White,
+                    Color.Red,
+                    Color(0xFFFFA500),
+                    Color.Yellow,
+                    Color.Green,
+                    Color.Cyan,
+                    Color.Blue,
+                    Color.Magenta,
+                    Color(0xFF800080),
+                    Color(0xFFFFC0CB)
                 )
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    presetColors.take(5).forEach { (color, _) ->
+                    presetColors.take(5).forEach { color ->
                         ColorSwatch(
                             color = color,
                             isSelected = false,
                             onClick = {
-                                // Update HSV sliders
                                 val hsv = FloatArray(3)
                                 android.graphics.Color.RGBToHSV(
                                     (color.red * 255).toInt(),
@@ -550,8 +557,7 @@ fun TVStaticColorPicker(
                                 )
                                 hue = hsv[0]
                                 saturation = hsv[1]
-                                value = hsv[2]
-                                // Apply immediately
+                                brightness = hsv[2]
                                 onColorSelected(color)
                             },
                             modifier = Modifier.weight(1f)
@@ -563,12 +569,11 @@ fun TVStaticColorPicker(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    presetColors.drop(5).forEach { (color, _) ->
+                    presetColors.drop(5).forEach { color ->
                         ColorSwatch(
                             color = color,
                             isSelected = false,
                             onClick = {
-                                // Update HSV sliders
                                 val hsv = FloatArray(3)
                                 android.graphics.Color.RGBToHSV(
                                     (color.red * 255).toInt(),
@@ -578,8 +583,7 @@ fun TVStaticColorPicker(
                                 )
                                 hue = hsv[0]
                                 saturation = hsv[1]
-                                value = hsv[2]
-                                // Apply immediately
+                                brightness = hsv[2]
                                 onColorSelected(color)
                             },
                             modifier = Modifier.weight(1f)
@@ -588,6 +592,59 @@ fun TVStaticColorPicker(
                 }
             }
         }
+    }
+}
+
+/**
+ * Focusable button for color control - works with TV remote
+ */
+@Composable
+fun ColorControlButton(
+    onClick: () -> Unit,
+    text: String,
+    modifier: Modifier = Modifier
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> AccentBlue
+            else -> CardBg
+        },
+        animationSpec = tween(100),
+        label = "bg"
+    )
+    
+    val borderColor = when {
+        isFocused -> TextPrimary
+        else -> BorderColor
+    }
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .height(48.dp)
+            .border(2.dp, borderColor, RoundedCornerShape(8.dp))
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown && 
+                    (keyEvent.key == Key.Enter || keyEvent.key == Key.DirectionCenter)) {
+                    onClick()
+                    true
+                } else false
+            },
+        colors = ButtonDefaults.buttonColors(containerColor = backgroundColor),
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Medium,
+            color = TextPrimary,
+            textAlign = TextAlign.Center
+        )
     }
 }
 // ============================================================
