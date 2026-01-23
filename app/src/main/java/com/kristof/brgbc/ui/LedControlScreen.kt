@@ -11,9 +11,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import com.kristof.brgbc.ble.LedEffect
+import com.kristof.brgbc.ble.LedMode
+import com.kristof.brgbc.ble.NativeEffect
+import com.kristof.brgbc.ble.RgbPinOrder
 import com.kristof.brgbc.ui.theme.*
 import com.kristof.brgbc.viewmodel.LedViewModel
 
@@ -33,7 +36,16 @@ fun LedControlScreen(
     onStartEffect: (LedEffect, Float) -> Unit,
     onStopEffect: () -> Unit,
     scannedDevices: List<BluetoothDevice>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // New settings callbacks
+    onPowerToggle: (Boolean) -> Unit = {},
+    onLedModeChange: (LedMode) -> Unit = {},
+    onNativeEffectSelected: (NativeEffect) -> Unit = {},
+    onNativeEffectSpeedChange: (Int) -> Unit = {},
+    onTemperatureChange: (Int) -> Unit = {},
+    onGrayscaleChange: (Int) -> Unit = {},
+    onRgbOrderChange: (RgbPinOrder) -> Unit = {},
+    onDynamicSensitivityChange: (Int) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showDeviceDialog by remember { mutableStateOf(false) }
@@ -73,7 +85,7 @@ fun LedControlScreen(
             // Divider
             item(key = "divider1") {
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider(color = BorderColor, thickness = 1.dp)
+                HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 Spacer(modifier = Modifier.height(8.dp))
             }
             
@@ -90,7 +102,7 @@ fun LedControlScreen(
             if (uiState.isConnected) {
                 // Divider
                 item(key = "divider2") {
-                    Divider(color = BorderColor, thickness = 1.dp)
+                    HorizontalDivider(color = BorderColor, thickness = 1.dp)
                 }
                 
                 // Mode Selector
@@ -98,29 +110,51 @@ fun LedControlScreen(
                     TVModeSelector(
                         selectedMode = uiState.controlMode,
                         onModeSelected = { mode ->
-                            viewModel.setControlMode(mode)
-                            onStopEffect()
-                            if (uiState.isScreenSyncActive) {
+                            val previousMode = uiState.controlMode
+                            
+                            // Stop screen sync when leaving SCREEN_SYNC mode
+                            if (previousMode == LedViewModel.ControlMode.SCREEN_SYNC && 
+                                mode != LedViewModel.ControlMode.SCREEN_SYNC &&
+                                uiState.isScreenSyncActive) {
                                 onStopScreenSync()
                             }
+                            
+                            // Stop effects when entering STATIC_COLOR or SCREEN_SYNC
+                            if (mode == LedViewModel.ControlMode.STATIC_COLOR || 
+                                mode == LedViewModel.ControlMode.SCREEN_SYNC) {
+                                if (previousMode == LedViewModel.ControlMode.EFFECTS) {
+                                    onStopEffect()
+                                }
+                            }
+                            
+                            // Stop screen sync when entering EFFECTS mode
+                            if (mode == LedViewModel.ControlMode.EFFECTS && 
+                                previousMode == LedViewModel.ControlMode.SCREEN_SYNC &&
+                                uiState.isScreenSyncActive) {
+                                onStopScreenSync()
+                            }
+                            
+                            viewModel.setControlMode(mode)
                         }
                     )
                 }
                 
-                // Brightness
-                item(key = "brightness") {
-                    TVBrightnessControl(
-                        brightness = uiState.brightness,
-                        onBrightnessChange = { level ->
-                            viewModel.setBrightness(level)
-                            onSetBrightness(level)
-                        }
-                    )
-                }
-                
-                // Divider
-                item(key = "divider3") {
-                    Divider(color = BorderColor, thickness = 1.dp)
+                // Brightness (not shown in Settings mode)
+                if (uiState.controlMode != LedViewModel.ControlMode.SETTINGS) {
+                    item(key = "brightness") {
+                        TVBrightnessControl(
+                            brightness = uiState.brightness,
+                            onBrightnessChange = { level ->
+                                viewModel.setBrightness(level)
+                                onSetBrightness(level)
+                            }
+                        )
+                    }
+                    
+                    // Divider
+                    item(key = "divider3") {
+                        HorizontalDivider(color = BorderColor, thickness = 1.dp)
+                    }
                 }
                 
                 // Mode content
@@ -130,7 +164,10 @@ fun LedControlScreen(
                             TVScreenSyncControl(
                                 isActive = uiState.isScreenSyncActive,
                                 isAudioSyncEnabled = uiState.audioSyncEnabled,
-                                onStartClick = onStartScreenSync,
+                                onStartClick = {
+                                    onStopEffect() // Stop any running effect first
+                                    onStartScreenSync()
+                                },
                                 onStopClick = onStopScreenSync,
                                 onAudioSyncToggle = { viewModel.setAudioSyncEnabled(it) }
                             )
@@ -142,6 +179,7 @@ fun LedControlScreen(
                             TVStaticColorPicker(
                                 selectedColor = uiState.staticColor,
                                 onColorSelected = { color ->
+                                    onStopEffect() // Stop any running effect first
                                     viewModel.setStaticColor(color)
                                     onSetColor(color)
                                 }
@@ -161,6 +199,53 @@ fun LedControlScreen(
                                 onSpeedChanged = { speed ->
                                     viewModel.setEffectSpeed(speed)
                                     onStartEffect(uiState.selectedEffect, speed)
+                                }
+                            )
+                        }
+                    }
+                    
+                    LedViewModel.ControlMode.SETTINGS -> {
+                        item(key = "settings") {
+                            TVSettingsControl(
+                                isPowerOn = uiState.isPowerOn,
+                                ledMode = uiState.ledMode,
+                                selectedNativeEffect = uiState.selectedNativeEffect,
+                                nativeEffectSpeed = uiState.nativeEffectSpeed,
+                                temperature = uiState.temperature,
+                                grayscaleLevel = uiState.grayscaleLevel,
+                                rgbPinOrder = uiState.rgbPinOrder,
+                                dynamicSensitivity = uiState.dynamicSensitivity,
+                                onPowerToggle = { isOn ->
+                                    viewModel.setPowerOn(isOn)
+                                    onPowerToggle(isOn)
+                                },
+                                onModeChange = { mode ->
+                                    viewModel.setLedMode(mode)
+                                    onLedModeChange(mode)
+                                },
+                                onNativeEffectSelected = { effect ->
+                                    viewModel.setSelectedNativeEffect(effect)
+                                    onNativeEffectSelected(effect)
+                                },
+                                onEffectSpeedChange = { speed ->
+                                    viewModel.setNativeEffectSpeed(speed)
+                                    onNativeEffectSpeedChange(speed)
+                                },
+                                onTemperatureChange = { temp ->
+                                    viewModel.setTemperature(temp)
+                                    onTemperatureChange(temp)
+                                },
+                                onGrayscaleChange = { level ->
+                                    viewModel.setGrayscaleLevel(level)
+                                    onGrayscaleChange(level)
+                                },
+                                onRgbOrderChange = { order ->
+                                    viewModel.setRgbPinOrder(order)
+                                    onRgbOrderChange(order)
+                                },
+                                onDynamicSensitivityChange = { sensitivity ->
+                                    viewModel.setDynamicSensitivity(sensitivity)
+                                    onDynamicSensitivityChange(sensitivity)
                                 }
                             )
                         }

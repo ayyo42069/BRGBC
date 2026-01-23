@@ -7,7 +7,6 @@ plugins {
 }
 
 
-
 val keystorePropertiesFile = rootProject.file("signing.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {

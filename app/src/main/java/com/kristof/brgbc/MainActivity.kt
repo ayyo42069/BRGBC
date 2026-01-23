@@ -25,6 +25,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.kristof.brgbc.ble.BleLedController
 import com.kristof.brgbc.ble.LedEffect
+import com.kristof.brgbc.ble.LedMode
+import com.kristof.brgbc.ble.NativeEffect
+import com.kristof.brgbc.ble.RgbPinOrder
 import com.kristof.brgbc.capture.LedControllerHolder
 import com.kristof.brgbc.capture.ScreenCaptureService
 import com.kristof.brgbc.ui.LedControlScreen
@@ -116,7 +119,16 @@ class MainActivity : ComponentActivity() {
                     onStartEffect = ::startEffect,
                     onStopEffect = ::stopEffect,
                     scannedDevices = scannedDevices,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    // Settings callbacks
+                    onPowerToggle = ::setPower,
+                    onLedModeChange = ::setLedMode,
+                    onNativeEffectSelected = ::setNativeEffect,
+                    onNativeEffectSpeedChange = ::setNativeEffectSpeed,
+                    onTemperatureChange = ::setTemperature,
+                    onGrayscaleChange = ::setGrayscale,
+                    onRgbOrderChange = ::setRgbPinOrder,
+                    onDynamicSensitivityChange = ::setDynamicSensitivity
                 )
             }
         }
@@ -305,6 +317,63 @@ class MainActivity : ComponentActivity() {
     
     private fun stopEffect() {
         ledController.stopEffect()
+    }
+    
+    // ============================================================
+    // NEW SETTINGS HANDLERS
+    // ============================================================
+    
+    private fun setPower(isOn: Boolean) {
+        if (isOn) {
+            ledController.turnOn()
+        } else {
+            ledController.turnOff()
+        }
+    }
+    
+    private fun setLedMode(mode: LedMode) {
+        when (mode) {
+            LedMode.RGB -> {
+                // RGB mode is set automatically when setting colors
+                ledController.setColor(255, 255, 255)
+            }
+            LedMode.GRAYSCALE -> {
+                ledController.setGrayscaleMode()
+            }
+            LedMode.TEMPERATURE -> {
+                ledController.setTemperatureMode(5) // Default to natural white
+            }
+            LedMode.EFFECT -> {
+                // Will be set when selecting a specific effect
+            }
+            LedMode.DYNAMIC -> {
+                ledController.setDynamicMode()
+            }
+        }
+    }
+    
+    private fun setNativeEffect(effect: NativeEffect) {
+        ledController.setNativeEffect(effect)
+    }
+    
+    private fun setNativeEffectSpeed(speed: Int) {
+        ledController.setEffectSpeed(speed)
+    }
+    
+    private fun setTemperature(temperature: Int) {
+        ledController.setTemperatureColor(temperature)
+    }
+    
+    private fun setGrayscale(level: Int) {
+        ledController.setGrayscaleColor(level)
+    }
+    
+    private fun setRgbPinOrder(order: RgbPinOrder) {
+        ledController.setRgbPinOrder(order)
+    }
+    
+    private fun setDynamicSensitivity(sensitivity: Int) {
+        ledController.setDynamicSensitivity(sensitivity)
     }
     
     private fun hasBluetoothPermissions(): Boolean {
