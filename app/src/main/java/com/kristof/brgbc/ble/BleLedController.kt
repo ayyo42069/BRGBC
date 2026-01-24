@@ -47,6 +47,19 @@ class BleLedController(private val context: Context) {
     
     var colorOrder: String = "rgb" // Hardware color order
     
+    // Effect crossfading state
+    private var lastSentR = 0
+    private var lastSentG = 0
+    private var lastSentB = 0
+    private var pendingCrossfade = false
+    private var crossfadeStartR = 0
+    private var crossfadeStartG = 0
+    private var crossfadeStartB = 0
+    
+    // Crossfade parameters
+    private val crossfadeDurationMs = 500L  // Transition time between effects
+    private val crossfadeSteps = 20         // Number of steps in crossfade
+    
     /**
      * Scan for LED devices
      */
@@ -231,9 +244,20 @@ class BleLedController(private val context: Context) {
     }
     
     /**
-     * Set LED color
+     * Set LED color (with tracking for crossfade)
      */
     fun setColor(r: Int, g: Int, b: Int) {
+        lastSentR = r
+        lastSentG = g
+        lastSentB = b
+        val packet = LedProtocol.buildColorPacket(r, g, b, colorOrder)
+        sendPacket(packet)
+    }
+    
+    /**
+     * Internal color set without tracking (for crossfade transitions)
+     */
+    private fun setColorInternal(r: Int, g: Int, b: Int) {
         val packet = LedProtocol.buildColorPacket(r, g, b, colorOrder)
         sendPacket(packet)
     }

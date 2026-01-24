@@ -4,34 +4,48 @@ import android.media.audiofx.Visualizer
 import android.media.projection.MediaProjection
 import android.util.Log
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Simple, reliable beat detection using frame-to-frame change detection.
+ * Enhanced beat detection with smoother brightness transitions.
  * 
- * Instead of comparing to rolling averages (which get stuck),
- * we detect beats by looking for sudden JUMPS in energy from one frame to the next.
- * This is more reliable and truly volume-independent.
+ * Key improvements:
+ * - Adaptive threshold based on music dynamics
+ * - Longer beat "tails" for more visible pulses
+ * - Smoother ambient brightness between beats
+ * - Genre-adaptive sensitivity
  */
 class AudioAnalyzer {
     companion object {
         private const val TAG = "AudioAnalyzer"
         private const val CAPTURE_SIZE = 1024
         
-        // Beat detection - frame-to-frame comparison
-        private const val JUMP_THRESHOLD = 1.12f    // 12% increase from previous frame = beat
-        private const val MIN_ENERGY_FOR_BEAT = 15f // Minimum raw energy to consider
-        private const val BEAT_COOLDOWN = 4         // Minimum frames between beats (prevents spam)
-        private const val BASS_THRESHOLD = 200f     // Bass energy needed for bass-triggered beat
+        // Beat detection - adaptive thresholds
+        private const val BASE_JUMP_THRESHOLD = 1.10f   // Base 10% increase = beat
+        private const val MIN_JUMP_THRESHOLD = 1.06f    // Minimum threshold for quiet music
+        private const val MAX_JUMP_THRESHOLD = 1.25f    // Maximum threshold for loud/dynamic music
+        private const val MIN_ENERGY_FOR_BEAT = 12f     // Lower threshold for sensitivity
+        private const val BEAT_COOLDOWN = 3             // Slightly faster recovery between beats
+        private const val BASS_THRESHOLD = 150f         // Lower bass threshold for more sensitivity
         
-        // Output brightness
-        private const val BASE_BRIGHTNESS = 0.15f   // 15% base (darker for more contrast)
-        private const val BEAT_BRIGHTNESS = 1.0f    // 100% on beat
-        private const val OUTPUT_ATTACK = 0.95f     // Very fast rise
-        private const val OUTPUT_DECAY = 0.25f      // Faster fade for visible pulses
+        // Beat visibility - longer tails
+        private const val BEAT_HOLD_FRAMES = 3          // Hold beat flash longer
+        private const val BEAT_TAIL_FRAMES = 8          // Gradual fade after beat
+        
+        // Output brightness - smoother transitions
+        private const val BASE_BRIGHTNESS = 0.12f       // Slightly darker base for contrast
+        private const val BEAT_BRIGHTNESS = 1.0f        // Full brightness on beat
+        private const val OUTPUT_ATTACK = 0.92f         // Fast but not instant rise
+        private const val OUTPUT_DECAY = 0.12f          // Much slower decay for visible tails
+        private const val AMBIENT_DECAY = 0.08f         // Even slower for ambient level
+        
+        // Dynamic range tracking
+        private const val DYNAMICS_WINDOW = 60          // Frames to track dynamics
+        private const val DYNAMICS_SMOOTH = 0.05f       // Slow adaptation to dynamics
         
         // Energy smoothing
-        private const val ENERGY_SMOOTH = 0.5f      // Smooth raw energy
+        private const val ENERGY_SMOOTH = 0.4f          // Slightly more smoothing
     }
 
     private var visualizer: Visualizer? = null
@@ -42,10 +56,21 @@ class AudioAnalyzer {
     @Volatile private var previousEnergy = 0f
     @Volatile private var smoothedEnergy = 0f
     
+    // Dynamic range tracking (for adaptive threshold)
+    private var minRecentEnergy = Float.MAX_VALUE
+    private var maxRecentEnergy = 0f
+    private var dynamicRange = 1f
+    private var adaptiveThreshold = BASE_JUMP_THRESHOLD
+    
     // Beat state
     @Volatile private var isBeat = false
-    @Volatile private var beatHoldFrames = 0  // Hold beat for visibility
-    @Volatile private var cooldownFrames = 0  // Prevent beat spam
+    @Volatile private var beatHoldFrames = 0   // Full brightness hold
+    @Volatile private var beatTailFrames = 0   // Gradual fade
+    @Volatile private var cooldownFrames = 0   // Prevent beat spam
+    @Volatile private var beatIntensity = 0f   // 0-1 intensity for gradual fade
+    
+    // Ambient brightness (smoothed base level between beats)
+    private var ambientBrightness = BASE_BRIGHTNESS
     
     // Output
     private var smoothedOutput = BASE_BRIGHTNESS
@@ -74,7 +99,7 @@ class AudioAnalyzer {
                 val targetSize = CAPTURE_SIZE.coerceIn(range[0], range[1])
                 captureSize = targetSize
                 
-                Log.d(TAG, "Frame-to-frame beat detection started! Size: $targetSize")
+                Log.d(TAG, "Enhanced beat detection started! Size: $targetSize")
                 
                 setDataCaptureListener(
                     object : Visualizer.OnDataCaptureListener {
@@ -125,37 +150,81 @@ class AudioAnalyzer {
         // Smooth the energy slightly to reduce noise
         smoothedEnergy = smoothedEnergy * (1f - ENERGY_SMOOTH) + currentEnergy * ENERGY_SMOOTH
         
+        // Track dynamic range for adaptive threshold
+        updateDynamicRange(smoothedEnergy)
+        
+        // Calculate adaptive threshold based on dynamic range
+        // High dynamic range = higher threshold needed (energetic music)
+        // Low dynamic range = lower threshold (quiet/ambient music)
+        val dynamicsFactor = (dynamicRange / 50f).coerceIn(0f, 1f)  // Normalize
+        adaptiveThreshold = MIN_JUMP_THRESHOLD + (MAX_JUMP_THRESHOLD - MIN_JUMP_THRESHOLD) * dynamicsFactor
+        
         // BEAT DETECTION: Did energy jump up significantly?
-        val jumpRatio = if (previousEnergy > 5f) smoothedEnergy / previousEnergy else 1f
+        val jumpRatio = if (previousEnergy > 4f) smoothedEnergy / previousEnergy else 1f
         
         // Cooldown countdown
         if (cooldownFrames > 0) cooldownFrames--
         
+        // Beat tail countdown
+        if (beatTailFrames > 0) beatTailFrames--
+        
         // BEAT DETECTION (only if not in cooldown)
         val beatTriggered = cooldownFrames == 0 && (
-            // Primary: energy jump detection
-            (jumpRatio > JUMP_THRESHOLD && smoothedEnergy > MIN_ENERGY_FOR_BEAT) ||
+            // Primary: energy jump detection with adaptive threshold
+            (jumpRatio > adaptiveThreshold && smoothedEnergy > MIN_ENERGY_FOR_BEAT) ||
             // Secondary: strong bass hit
-            (bassEnergy > BASS_THRESHOLD && jumpRatio > 1.08f && smoothedEnergy > MIN_ENERGY_FOR_BEAT)
+            (bassEnergy > BASS_THRESHOLD && jumpRatio > 1.06f && smoothedEnergy > MIN_ENERGY_FOR_BEAT)
         )
         
         if (beatTriggered) {
             isBeat = true
-            beatHoldFrames = 2   // Short hold for snappy response
-            cooldownFrames = BEAT_COOLDOWN  // Prevent immediate re-trigger
+            beatHoldFrames = BEAT_HOLD_FRAMES
+            beatTailFrames = BEAT_TAIL_FRAMES
+            cooldownFrames = BEAT_COOLDOWN
+            beatIntensity = 1f
         } else if (beatHoldFrames > 0) {
+            // Full brightness hold
             beatHoldFrames--
-            isBeat = beatHoldFrames > 0
+            isBeat = true
+            beatIntensity = 1f
+        } else if (beatTailFrames > 0) {
+            // Gradual tail fade
+            isBeat = false
+            beatIntensity = beatTailFrames.toFloat() / BEAT_TAIL_FRAMES
         } else {
             isBeat = false
+            beatIntensity = 0f
         }
+        
+        // Update ambient brightness (very slow tracking of average energy)
+        val targetAmbient = BASE_BRIGHTNESS + (smoothedEnergy / 100f).coerceIn(0f, 0.25f)
+        ambientBrightness = ambientBrightness * (1f - AMBIENT_DECAY) + targetAmbient * AMBIENT_DECAY
         
         // Debug
         frameCounter++
-        if (frameCounter % 20 == 0) {
-            Log.d(TAG, "E: %.0f | Prev: %.0f | Jump: %.2f | Bass: %.0f | Beat: %s".format(
-                smoothedEnergy, previousEnergy, jumpRatio, bassEnergy, if (isBeat) "YES" else "no"
+        if (frameCounter % 25 == 0) {
+            Log.d(TAG, "E: %.0f | Jump: %.2f | Thresh: %.2f | Bass: %.0f | Beat: %s | Tail: %d".format(
+                smoothedEnergy, jumpRatio, adaptiveThreshold, bassEnergy, 
+                if (isBeat) "YES" else "no", beatTailFrames
             ))
+        }
+    }
+    
+    private fun updateDynamicRange(energy: Float) {
+        // Update min/max tracking
+        if (energy < minRecentEnergy) minRecentEnergy = energy
+        if (energy > maxRecentEnergy) maxRecentEnergy = energy
+        
+        // Slowly decay the range tracking
+        frameCounter++
+        if (frameCounter % DYNAMICS_WINDOW == 0) {
+            // Calculate dynamic range
+            val range = maxRecentEnergy - minRecentEnergy
+            dynamicRange = dynamicRange * (1f - DYNAMICS_SMOOTH) + range * DYNAMICS_SMOOTH
+            
+            // Reset for next window (with some hysteresis)
+            minRecentEnergy = minRecentEnergy * 0.5f + Float.MAX_VALUE * 0.5f
+            maxRecentEnergy = maxRecentEnergy * 0.8f  // Decay slower
         }
     }
     
@@ -183,24 +252,31 @@ class AudioAnalyzer {
             Log.e(TAG, "Error stopping Visualizer: ${e.message}")
         }
         visualizer = null
+        
+        // Reset state
+        minRecentEnergy = Float.MAX_VALUE
+        maxRecentEnergy = 0f
+        dynamicRange = 1f
     }
 
     /**
      * Get brightness for LEDs (0.0 to 1.0)
+     * Now with smoother transitions and longer beat tails
      */
     fun getAmplitude(): Float {
         if (!isRecording) return 0f
         
-        // Target brightness
-        val targetOutput = if (isBeat) {
-            BEAT_BRIGHTNESS
-        } else {
-            // Ambient based on current energy (normalized roughly)
-            val normalized = (smoothedEnergy / 80f).coerceIn(0f, 1f)
-            BASE_BRIGHTNESS + normalized * 0.2f
+        // Target brightness calculation
+        val targetOutput = when {
+            isBeat -> BEAT_BRIGHTNESS
+            beatIntensity > 0f -> {
+                // Gradual tail: blend from beat brightness to ambient
+                ambientBrightness + (BEAT_BRIGHTNESS - ambientBrightness) * beatIntensity * 0.6f
+            }
+            else -> ambientBrightness
         }
         
-        // Smooth output
+        // Smooth output with asymmetric attack/decay
         val factor = if (targetOutput > smoothedOutput) OUTPUT_ATTACK else OUTPUT_DECAY
         smoothedOutput = smoothedOutput + (targetOutput - smoothedOutput) * factor
         
@@ -209,8 +285,8 @@ class AudioAnalyzer {
         // Debug
         logCounter++
         if (logCounter % 40 == 0) {
-            Log.d(TAG, "Output: %.2f | Target: %.2f | Beat: %s".format(
-                finalOutput, targetOutput, if (isBeat) "YES!" else "no"
+            Log.d(TAG, "Output: %.2f | Target: %.2f | Ambient: %.2f | Beat: %s | Intensity: %.2f".format(
+                finalOutput, targetOutput, ambientBrightness, if (isBeat) "YES!" else "no", beatIntensity
             ))
         }
         
@@ -218,5 +294,6 @@ class AudioAnalyzer {
     }
     
     fun getRawEnergy(): Float = currentEnergy
-    fun getBeatIntensity(): Float = if (isBeat) 1f else 0f
+    fun getBeatIntensity(): Float = beatIntensity
+    fun isCurrentlyBeat(): Boolean = isBeat
 }
